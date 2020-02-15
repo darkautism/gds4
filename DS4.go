@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 func BTAddrString2Addr(addr string) (*[6]uint8, error) {
@@ -76,19 +78,18 @@ func (dp DS4_Packet) TOUCH() bool {
 }
 
 func (ds4 *DS4) Close() {
-	syscall.Close(ds4.Ctrl)
-	syscall.Close(ds4.Data)
+	unix.Close(ds4.Ctrl)
+	unix.Close(ds4.Data)
 }
 
-func writePacket(fd int, pkt *HID_OUTPUT_RESPONSE_PACKET) {
+func writePacket(fd int, pkt *HID_OUTPUT_RESPONSE_PACKET, c chan error) {
 	pkt_b := (*[unsafe.Sizeof(*pkt)]byte)(unsafe.Pointer(pkt))[:]
 	mycrc := (*uint32)(unsafe.Pointer(&(pkt_b[HID_OUTPUT_RESPONSE_SIZE-4])))
 	*mycrc = crc32.ChecksumIEEE(pkt_b[:HID_OUTPUT_RESPONSE_SIZE-4])
-	if n, err := syscall.Write(fd, pkt_b[:HID_OUTPUT_RESPONSE_SIZE]); err != nil {
-		ret.Event <- err
+	if n, err := unix.Write(fd, pkt_b[:HID_OUTPUT_RESPONSE_SIZE]); err != nil {
+		c <- err
 	} else if n != HID_OUTPUT_RESPONSE_SIZE {
-		ret.Event <- fmt.Printf("Write packet size to DS4 error(should be %d but returns %d).\n", HID_OUTPUT_RESPONSE_SIZE, n)
-
+		c <- fmt.Errorf("Write packet size to DS4 error(should be %d but returns %d).\n", HID_OUTPUT_RESPONSE_SIZE, n)
 	}
 }
 
@@ -100,7 +101,7 @@ func (ds4 *DS4) SetLED(c color.Color) {
 func (ds4 *DS4) SetReportType(p int) {
 	pkt := initPacket()
 	pkt.Protocol = byte(p)
-	writePacket(ds4.Ctrl, pkt)
+	writePacket(ds4.Ctrl, pkt, ds4.Event)
 }
 
 func (ds4 *DS4) SetLEDRGB(r, g, b int) {
@@ -109,7 +110,7 @@ func (ds4 *DS4) SetLEDRGB(r, g, b int) {
 	pkt.LED[0] = byte(r)
 	pkt.LED[1] = byte(g)
 	pkt.LED[2] = byte(b)
-	writePacket(ds4.Ctrl, pkt)
+	writePacket(ds4.Ctrl, pkt, ds4.Event)
 }
 
 func (ds4 *DS4) SetRumble(powerStrong, powerWeak int) {
@@ -117,7 +118,7 @@ func (ds4 *DS4) SetRumble(powerStrong, powerWeak int) {
 	pkt.FEATURE = FEATURE_RUMBLE
 	pkt.RumbleStrong = byte(powerStrong)
 	pkt.RumbleWeak = byte(powerWeak)
-	writePacket(ds4.Ctrl, pkt)
+	writePacket(ds4.Ctrl, pkt, ds4.Event)
 }
 
 func (ds4 *DS4) SetLEDDelay(on, off int) {
@@ -125,7 +126,7 @@ func (ds4 *DS4) SetLEDDelay(on, off int) {
 	pkt.FEATURE = FEATURE_BLINK
 	pkt.LEDDelay[0] = byte(on)
 	pkt.LEDDelay[1] = byte(off)
-	writePacket(ds4.Ctrl, pkt)
+	writePacket(ds4.Ctrl, pkt, ds4.Event)
 }
 
 func initPacket() *HID_OUTPUT_RESPONSE_PACKET {
@@ -138,11 +139,11 @@ func initPacket() *HID_OUTPUT_RESPONSE_PACKET {
 }
 
 func newL2Conn(addr [6]uint8, channel int) (int, error) {
-	fd, err := syscall.Socket(syscall.AF_BLUETOOTH, syscall.SOCK_SEQPACKET, syscall.BTPROTO_L2CAP)
+	fd, err := unix.Socket(unix.AF_BLUETOOTH, unix.SOCK_SEQPACKET, unix.BTPROTO_L2CAP)
 	if err != nil {
 		return -1, err
 	}
-	if err := syscall.Connect(fd, &syscall.SockaddrL2{
+	if err := unix.Connect(fd, &unix.SockaddrL2{
 		PSM:  uint16(channel),
 		Addr: addr,
 	}); err != nil {
@@ -186,7 +187,7 @@ func NewDS4(addrStr string) (*DS4, error) {
 				ret.CheckNotify()
 				copy(prev_b, status_b)
 			default:
-				n, err := syscall.Read(ret.Data, status_b)
+				n, err := unix.Read(ret.Data, status_b)
 				ret.Status.PacketSize = n
 				if isFirst {
 					copy(prev_b, status_b)
