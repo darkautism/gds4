@@ -1,4 +1,4 @@
-module example.com/m/v2
+module github.com/darkautism/gds4
 
 go 1.13
 
