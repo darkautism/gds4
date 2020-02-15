@@ -1,4 +1,4 @@
-package go-ds4
+package gds4
 
 const (
 	HID_TRANSACTION_GET  byte = 0x40

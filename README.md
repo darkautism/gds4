@@ -1,3 +1,3 @@
-# go-ds4
+# Golang Dualsock 4 
 
-Tiny ds4 golang package.
+Tiny Dualsock 4 golang package.

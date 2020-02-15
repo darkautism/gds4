@@ -1,4 +1,4 @@
-package go-ds4
+package gds4
 
 import (
 	"encoding/hex"
@@ -86,9 +86,9 @@ func writePacket(fd int, pkt *HID_OUTPUT_RESPONSE_PACKET) {
 	*mycrc = crc32.ChecksumIEEE(pkt_b[:HID_OUTPUT_RESPONSE_SIZE-4])
 	if n, err := syscall.Write(fd, pkt_b[:HID_OUTPUT_RESPONSE_SIZE]); err != nil {
 		ret.Event <- err
-	} else if n != HID_OUTPUT_RESPONSE_SIZE {		
+	} else if n != HID_OUTPUT_RESPONSE_SIZE {
 		ret.Event <- fmt.Printf("Write packet size to DS4 error(should be %d but returns %d).\n", HID_OUTPUT_RESPONSE_SIZE, n)
-		
+
 	}
 }
 

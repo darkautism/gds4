@@ -1,10 +1,10 @@
-package go-ds4
+package gds4
 
 /* Because ds4's report fequency is too quickly
  * to cause notify trigger too quickly.
  * This feature is cost too many cpu on my beaglebone
  * and waste a lot of battery.
-*/
+ */
 
 type DS4NotifyType int
 
