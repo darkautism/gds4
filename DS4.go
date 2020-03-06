@@ -8,8 +8,6 @@ import (
 	"strings"
 	"unsafe"
 	"io"
-
-	"golang.org/x/sys/unix"
 )
 
 func BTAddrString2Addr(addr string) (*[6]uint8, error) {
@@ -137,19 +135,6 @@ func initPacket() *HID_OUTPUT_RESPONSE_PACKET {
 	return &ret
 }
 
-func newL2Conn(addr [6]uint8, channel int) (int, error) {
-	fd, err := unix.Socket(unix.AF_BLUETOOTH, unix.SOCK_SEQPACKET, unix.BTPROTO_L2CAP)
-	if err != nil {
-		return -1, err
-	}
-	if err := unix.Connect(fd, &unix.SockaddrL2{
-		PSM:  uint16(channel),
-		Addr: addr,
-	}); err != nil {
-		return -1, err
-	}
-	return fd, nil
-}
 
 func NewDS4( device io.ReadWriteCloser ) (*DS4, error) {
 	var ret DS4

@@ -31,7 +31,6 @@ func main() {
 		case <-ossingal:
 			return
 		default:
-			_ = ds4
 			log.Printf("%+v\n", ds4.Status)
 		}
 	}
