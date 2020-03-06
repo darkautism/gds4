@@ -1,5 +1,7 @@
 package gds4
 
+import "io"
+
 const (
 	HID_TRANSACTION_GET  byte = 0x40
 	HID_TRANSACTION_SET  byte = 0x50
@@ -43,18 +45,15 @@ type HID_OUTPUT_RESPONSE_PACKET struct {
 }
 
 type DS4 struct {
-	Data       int
-	Ctrl       int
+	Device     io.ReadWriteCloser
 	Status     DS4_Packet
 	PrevStatus DS4_Packet
 	IsConn     bool
-	Notify     map[DS4NotifyType]chan int
 	Event      chan error
 }
 
+// 77bytes
 type DS4_Packet struct {
-	Type     byte
-	Protocol byte
 	unknow   byte
 	ReportID byte
 	L_X      uint8

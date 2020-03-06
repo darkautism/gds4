@@ -6,10 +6,8 @@ import (
 	"hash/crc32"
 	"image/color"
 	"strings"
-	"time"
 	"unsafe"
-
-	"golang.org/x/sys/unix"
+	"io"
 )
 
 func BTAddrString2Addr(addr string) (*[6]uint8, error) {
@@ -78,15 +76,14 @@ func (dp DS4_Packet) TOUCH() bool {
 }
 
 func (ds4 *DS4) Close() {
-	unix.Close(ds4.Ctrl)
-	unix.Close(ds4.Data)
+	ds4.Device.Close()
 }
 
-func writePacket(fd int, pkt *HID_OUTPUT_RESPONSE_PACKET, c chan error) {
+func writePacket(dev io.Writer, pkt *HID_OUTPUT_RESPONSE_PACKET, c chan error) {
 	pkt_b := (*[unsafe.Sizeof(*pkt)]byte)(unsafe.Pointer(pkt))[:]
 	mycrc := (*uint32)(unsafe.Pointer(&(pkt_b[HID_OUTPUT_RESPONSE_SIZE-4])))
 	*mycrc = crc32.ChecksumIEEE(pkt_b[:HID_OUTPUT_RESPONSE_SIZE-4])
-	if n, err := unix.Write(fd, pkt_b[:HID_OUTPUT_RESPONSE_SIZE]); err != nil {
+	if n, err := dev.Write(pkt_b[:HID_OUTPUT_RESPONSE_SIZE]); err != nil {
 		c <- err
 	} else if n != HID_OUTPUT_RESPONSE_SIZE {
 		c <- fmt.Errorf("Write packet size to DS4 error(should be %d but returns %d).\n", HID_OUTPUT_RESPONSE_SIZE, n)
@@ -101,7 +98,7 @@ func (ds4 *DS4) SetLED(c color.Color) {
 func (ds4 *DS4) SetReportType(p int) {
 	pkt := initPacket()
 	pkt.Protocol = byte(p)
-	writePacket(ds4.Ctrl, pkt, ds4.Event)
+	writePacket(ds4.Device, pkt, ds4.Event)
 }
 
 func (ds4 *DS4) SetLEDRGB(r, g, b int) {
@@ -110,7 +107,7 @@ func (ds4 *DS4) SetLEDRGB(r, g, b int) {
 	pkt.LED[0] = byte(r)
 	pkt.LED[1] = byte(g)
 	pkt.LED[2] = byte(b)
-	writePacket(ds4.Ctrl, pkt, ds4.Event)
+	writePacket(ds4.Device, pkt, ds4.Event)
 }
 
 func (ds4 *DS4) SetRumble(powerStrong, powerWeak int) {
@@ -118,7 +115,7 @@ func (ds4 *DS4) SetRumble(powerStrong, powerWeak int) {
 	pkt.FEATURE = FEATURE_RUMBLE
 	pkt.RumbleStrong = byte(powerStrong)
 	pkt.RumbleWeak = byte(powerWeak)
-	writePacket(ds4.Ctrl, pkt, ds4.Event)
+	writePacket(ds4.Device, pkt, ds4.Event)
 }
 
 func (ds4 *DS4) SetLEDDelay(on, off int) {
@@ -126,7 +123,7 @@ func (ds4 *DS4) SetLEDDelay(on, off int) {
 	pkt.FEATURE = FEATURE_BLINK
 	pkt.LEDDelay[0] = byte(on)
 	pkt.LEDDelay[1] = byte(off)
-	writePacket(ds4.Ctrl, pkt, ds4.Event)
+	writePacket(ds4.Device, pkt, ds4.Event)
 }
 
 func initPacket() *HID_OUTPUT_RESPONSE_PACKET {
@@ -138,56 +135,41 @@ func initPacket() *HID_OUTPUT_RESPONSE_PACKET {
 	return &ret
 }
 
-func newL2Conn(addr [6]uint8, channel int) (int, error) {
-	fd, err := unix.Socket(unix.AF_BLUETOOTH, unix.SOCK_SEQPACKET, unix.BTPROTO_L2CAP)
-	if err != nil {
-		return -1, err
-	}
-	if err := unix.Connect(fd, &unix.SockaddrL2{
-		PSM:  uint16(channel),
-		Addr: addr,
-	}); err != nil {
-		return -1, err
-	}
-	return fd, nil
-}
 
-func NewDS4(addrStr string) (*DS4, error) {
+func NewDS4( device io.ReadWriteCloser ) (*DS4, error) {
 	var ret DS4
-	decoded, err := hex.DecodeString(strings.ReplaceAll(addrStr, ":", ""))
-	if err != nil {
-		return nil, fmt.Errorf("Input bluetooth address %s is invalid.", addrStr)
-	}
-	var addr [6]uint8
-	copy(addr[:], decoded)
-	ctl_fd, err := newL2Conn(addr, 0x11)
-	if err != nil {
-		return nil, err
-	}
-	data_fd, err := newL2Conn(addr, 0x13)
-	if err != nil {
-		return nil, err
-	}
-
 	ret.IsConn = true
-	ret.Ctrl = ctl_fd
-	ret.Data = data_fd
-	ret.Notify = make(map[DS4NotifyType]chan int)
+	ret.Device = device
 	// Send 0x11 report
 	ret.SetReportType(0x11)
+	var filter [9]byte
 
 	go func() {
 		status_b := (*[unsafe.Sizeof(ret.Status)]byte)(unsafe.Pointer(&ret.Status))[:]
 		prev_b := (*[unsafe.Sizeof(ret.PrevStatus)]byte)(unsafe.Pointer(&ret.PrevStatus))[:]
-		checkTimer := time.Tick(100 * time.Millisecond)
 		isFirst := true
 		for {
 			select {
-			case <-checkTimer:
-				ret.CheckNotify()
-				copy(prev_b, status_b)
 			default:
-				n, err := unix.Read(ret.Data, status_b)
+				n, err := ret.Device.Read(filter[:1])
+				if err != nil {
+					ret.Event <- err
+					return
+				} else if (filter[0] != 0xa1) {
+					continue; // filter unknow packet
+				}
+				n, err = ret.Device.Read(filter[:1])
+				if (filter[0] == 0x01) {
+					//n, err = ret.Device.Read(filter[:])
+					n, err = io.ReadAtLeast(ret.Device, filter[:], 9);
+					copy(status_b[2:], filter[:])
+				} else if (filter[0] == 0x11) {
+					//n, err = ret.Device.Read(status_b)
+					n, err = io.ReadAtLeast(ret.Device, status_b, 9);
+				} else {
+					continue; // filter unknow packet
+				}
+
 				ret.Status.PacketSize = n
 				if isFirst {
 					copy(prev_b, status_b)

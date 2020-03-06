@@ -1,12 +1,3 @@
-# Golang Dualsock 4 
-
-Tiny Dualsock 4 golang package.
-
-# Usage
-
-```import github.com/darkautism/gds4```
-
-```go
 package main
 
 import (
@@ -44,6 +35,3 @@ func main() {
 		}
 	}
 }
-```
-
-See example dir to get more example.

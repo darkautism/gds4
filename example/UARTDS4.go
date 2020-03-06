@@ -1,12 +1,3 @@
-# Golang Dualsock 4 
-
-Tiny Dualsock 4 golang package.
-
-# Usage
-
-```import github.com/darkautism/gds4```
-
-```go
 package main
 
 import (
@@ -16,17 +7,17 @@ import (
 	"syscall"
 
 	"github.com/darkautism/gds4"
-	"github.com/darkautism/gds4/bluetooth"
+	"github.com/tarm/serial"
 )
 
 func main() {
 	log.Println("Connection to DS4")
-	bt, err := bluetooth.NewBT("30:0E:D5:8E:7A:FC")
+	serial, err := serial.OpenPort(&serial.Config{Name: "/dev/ttyUSB0", Baud: 38400})
 	if err != nil {
 		log.Panic(err)
 		return
 	}
-	ds4, err := gds4.NewDS4(bt)
+	ds4, err := gds4.NewDS4(serial)
 	if err != nil {
 		log.Panic(err)
 		return
@@ -44,6 +35,3 @@ func main() {
 		}
 	}
 }
-```
-
-See example dir to get more example.
